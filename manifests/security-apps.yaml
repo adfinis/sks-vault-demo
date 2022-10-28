@@ -1,0 +1,148 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: security-apps
+  namespace: infra-argocd
+  labels:
+    app.kubernetes.io/name: helm-infra-argocd
+    app.kubernetes.io/component: security-apps
+    app.kubernetes.io/managed-by: helm-infra-argocd
+spec:
+  destination:
+    namespace: infra-argocd
+    server: https://kubernetes.default.svc
+  project: argocd-apps
+  syncPolicy:
+    automated: {}
+  source:
+    chart: security-apps
+    repoURL: https://charts.adfinis.com
+    targetRevision: 0.60.*
+    helm:
+      values: |-
+        fullnameOverride: app
+        vault:
+          enabled: true
+          project: security-vault
+          destination:
+            namespace: security-vault
+            server: https://kubernetes.default.svc
+          syncPolicy:
+            automated: {}
+          values:
+            global:
+              # TLS is a requirement for Raft clusters:
+              # https://developer.hashicorp.com/vault/docs/platform/k8s/helm/examples/enterprise-with-raft
+              tlsDisable: false
+            server:
+              image:
+                repository: hashicorp/vault-enterprise
+                tag: 1.12.1-ent
+              enterpriseLicense:
+                # https://vaultproject.io/trial
+                secretName: "vault-license"
+                secretKey: "license"
+              authDelegator:
+                # Enable for Kubernetes authentication, requires permissions on cluster scope:
+                # https://www.vaultproject.io/docs/auth/kubernetes#configuring-kubernetes
+                enabled: false
+              dataStorage:
+                # TODO: Install Longhorn
+                # https://community.exoscale.com/documentation/sks/longhorn-exoscale-sks
+                enabled: false
+              auditStorage:
+                enabled: false
+              extraInitContainers:
+                # This example installs a plugin pulled from github into the /usr/local/libexec/vault/vault-plugin-secrets-exoscale folder,
+                # which is defined in the volumes value.
+                - name: vault-plugin-secrets-exoscale
+                  image: "alpine"
+                  command: [sh, -c]
+                  args:
+                    - cd /tmp &&
+                      wget https://github.com/exoscale/vault-plugin-secrets-exoscale/releases/download/v0.3.0/vault-plugin-secrets-exoscale_0.3.0_linux_amd64.tar.gz -O vault-plugin-secrets-exoscale.tar.gz &&
+                      tar -xf vault-plugin-secrets-exoscale.tar.gz &&
+                      mv vault-plugin-secrets-exoscale /usr/local/libexec/vault/vault-plugin-secrets-exoscale &&
+                      chmod +x /usr/local/libexec/vault/vault-plugin-secrets-exoscale
+                  volumeMounts:
+                    - name: plugins
+                      mountPath: /usr/local/libexec/vault
+              extraEnvironmentVars:
+                # This is only needed with a self-signed/untrusted certificate and it will automatically
+                # set the necessary env var, such that VAULT_SKIP_VERIFY is not needed on the Vault server pods:
+                # https://www.vaultproject.io/docs/commands#environment-variables
+                VAULT_CACERT: "/vault/tls/vault.ca"
+              volumes:
+                # Retrieve vault.crt, key and CA cert as Kubernetes secrets. Create with:
+                # kubectl create secret generic vault-server-tls \
+                #  --from-file=vault.key=tls/vault.key \
+                #  --from-file=vault.crt=tls/vault.crt \
+                #  --from-file=vault.ca=tls/vault_ca.crt
+                - name: tls
+                  secret:
+                    secretName: vault-server-tls
+                - name: plugins
+                  # exists as long as that Pod is running on that node
+                  emptyDir: {}
+              volumeMounts:
+                # Mount above secret on specific path
+                - name: tls
+                  mountPath: /vault/tls
+                  readOnly: true
+                # Mount plugins to plugin_dir
+                - name: plugins
+                  mountPath: /usr/local/libexec/vault
+              ingress:
+                # TODO: Expose Vault API with SSL passthrough
+                # https://community.exoscale.com/documentation/sks/loadbalancer-ingress
+                enabled: false
+              ha:
+                enabled: true
+                replicas: 3
+                # Set the api_addr configuration for Vault HA
+                # See https://www.vaultproject.io/docs/configuration#api_addr
+                # If set to null, this will be set to the Pod IP Address
+                # Exoscale secrets engine plugin fails to unwrap token if not aligned with certificate
+                apiAddr: https://vault-internal.security-vault:8200
+                raft:
+                  # Vault Enterprise requires Raft (or Consul) storage backend
+                  enabled: true
+                  # Set the Node Raft ID to the name of the pod
+                  setNodeId: true
+                  config: |
+                    # Vault server configuration
+                    # https://www.vaultproject.io/docs/configuration
+                    cluster_name = "hug-exoscale-2022"
+                    ui = true
+
+                    listener "tcp" {
+                      address = "[::]:8200"
+                      cluster_address = "[::]:8201"
+                      tls_cert_file = "/vault/tls/vault.crt"
+                      tls_key_file  = "/vault/tls/vault.key"
+                      tls_client_ca_file = "/vault/tls/vault.ca"
+                    }
+
+                    # https://www.vaultproject.io/docs/configuration/storage/raft
+                    storage "raft" {
+                      path = "/vault/file"
+                      retry_join {
+                        leader_api_addr = "https://vault-internal.security-vault:8200"
+                        # https://developer.hashicorp.com/vault/docs/concepts/integrated-storage#integrated-storage-and-tls
+                        leader_tls_servername = "vault-internal.security-vault"
+                        leader_client_cert_file = "/vault/tls/vault.crt"
+                        leader_client_key_file = "/vault/tls/vault.key"
+                        leader_ca_cert_file = "/vault/tls/vault.ca"
+                      }
+                    }
+
+                    # Tag Kubernetes pods with labels for service discovery
+                    # https://www.vaultproject.io/docs/configuration/service-registration/kubernetes
+                    service_registration "kubernetes" {}
+
+                    # https://developer.hashicorp.com/vault/docs/plugins
+                    plugin_directory = "/usr/local/libexec/vault"
+            injector:
+              # Deploy Vault server cluster w/o injector
+              enabled: false
