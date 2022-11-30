@@ -1,0 +1,17 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-configs
+  namespace: infra-argocd
+spec:
+  destination:
+    namespace: infra-argocd
+    server: https://kubernetes.default.svc
+  project: argocd-apps
+  source:
+    path: manifests
+    repoURL: https://github.com/adfinis/sks-vault-demo.git
+    targetRevision: HEAD
+  syncPolicy:
+    automated: {}

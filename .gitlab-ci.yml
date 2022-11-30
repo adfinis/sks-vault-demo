@@ -1,0 +1,84 @@
+---
+# https://docs.gitlab.com/ee/user/infrastructure/iac
+# https://docs.gitlab.com/ee/user/infrastructure/iac/mr_integration.html
+# https://gitlab.com/gitlab-org/terraform-images/-/blob/master/src/bin/gitlab-terraform.sh
+
+default:
+  image:
+    name: registry.gitlab.com/gitlab-org/terraform-images/stable:latest
+  cache:
+    key: $CI_COMMIT_REF_SLUG
+    paths:
+    - ${TF_ROOT}/.terraform* #include .terraform.lock.hcl
+    - exo
+  before_script:
+  # ensure exo cli
+  - cp exo /usr/local/bin/ || true
+
+variables:
+  TF_ROOT: ${CI_PROJECT_DIR} #/environments/example/${TF_STATE_NAME}
+  TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}
+  TF_STATE_NAME: default
+  TF_CACHE_KEY: default
+  EXO_CLI_RELEASE: 1.60.0
+  EXO_CLI_URI: https://github.com/exoscale/cli/releases/download/v${EXO_CLI_RELEASE}/exoscale-cli_${EXO_CLI_RELEASE}_linux_amd64.tar.gz
+
+stages:
+- prepare
+- validate
+- build
+- deploy
+- cleanup
+
+init:
+  stage: prepare
+  script:
+  # download exo cli
+  - curl -sL -o exo.tar.gz $EXO_CLI_URI && tar -xf exo.tar.gz
+  - gitlab-terraform init
+
+validate:
+  stage: validate
+  script:
+  - gitlab-terraform validate
+
+plan:
+  stage: build
+  script:
+  - gitlab-terraform plan
+  - gitlab-terraform plan-json
+  artifacts:
+    name: plan
+    paths:
+    - ${TF_ROOT}/plan.cache
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+
+apply:
+  stage: deploy
+  environment:
+    name: development
+  script:
+  - gitlab-terraform apply
+  - gitlab-terraform output -json | jq . > output.json
+  artifacts:
+    name: output
+    paths:
+    - ${TF_ROOT}/output.json
+  dependencies:
+    # reuse the plan artifacts
+    # https://docs.gitlab.com/ee/ci/yaml/index.html#dependencies
+  - plan
+  only:
+    variables:
+    - $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  when: manual
+
+destroy:
+  stage: cleanup
+  script:
+  - gitlab-terraform destroy -auto-approve
+  only:
+    variables:
+    - $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  when: manual

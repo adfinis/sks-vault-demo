@@ -1,0 +1,35 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: infra-apps
+  namespace: infra-argocd
+  labels:
+    app.kubernetes.io/name: helm-infra-argocd
+    app.kubernetes.io/component: infra-apps
+    app.kubernetes.io/managed-by: helm-infra-argocd
+spec:
+  destination:
+    namespace: infra-argocd
+    server: https://kubernetes.default.svc
+  project: argocd-apps
+  syncPolicy:
+    automated: {}
+  source:
+    chart: infra-apps
+    repoURL: https://charts.adfinis.com
+    targetRevision: 0.124.*
+    helm:
+      values: |-
+        fullnameOverride: app
+        argocd:
+          enabled: true
+          project: infra-argocd
+          destination:
+            server: https://kubernetes.default.svc
+            namespace: infra-argocd
+          syncPolicy:
+            automated: {}
+          values:
+            dex:
+              enabled: false

@@ -1,0 +1,8 @@
+.terraform*
+.env
+vault.hclic
+kubeconfig
+*.crt
+*.key
+*.csr
+*.srl
