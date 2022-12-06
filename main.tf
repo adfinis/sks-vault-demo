@@ -4,7 +4,7 @@ module "sks" {
 
   name               = "andreasg-hug-meetup"
   zone               = "ch-dk-2" # Zurich, `exo zone`
-  kubernetes_version = "1.25.1"
+  kubernetes_version = "1.25.4"
 
   nodepools = {
     "router" = {
