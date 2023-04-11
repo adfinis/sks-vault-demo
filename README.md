@@ -1,6 +1,6 @@
-# Vault Deployment on Exoscasle Scalable Kubernetes Service (SKS)
+# Vault Deployment on Exoscale Scalable Kubernetes Service (SKS)
 
-Demo of HashiCorp Vault deployment on Exoscasle Scalable Kubernetes Service (SKS).
+Demo of HashiCorp Vault deployment on Exoscale Scalable Kubernetes Service (SKS).
 
 ## Exoscale API Keys
 
