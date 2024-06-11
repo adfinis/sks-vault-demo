@@ -180,7 +180,7 @@ export VAULT_ADDR=https://127.0.0.1:8200
 export VAULT_CACERT=scripts/tls/vault_ca.crt
 
 # get shasum of plugin binary on Vault server Pod
-plugin_shasum=$(kubectl exec -it vault-0 -- sha256sum /usr/local/libexec/vault/vault-plugin-secrets-exoscale | cut -d " " -f 1)
+plugin_shasum=$(kubectl exec -it vault-0 -n security-vault -- sha256sum /usr/local/libexec/vault/vault-plugin-secrets-exoscale | cut -d " " -f 1)
 
 # login with Token
 vault login
@@ -222,7 +222,7 @@ vault write exoscale/config/lease \
 Create a backend role:
 ```bash
 vault write exoscale/role/list-only \
-	operations=list-zones,list-instance-types \
+  operations=list-zones,list-instance-types \
   renewable=true
 ```
 
@@ -275,6 +275,20 @@ vault write -f sys/leases/revoke-prefix/exoscale/apikey/list-only
 ```
 
 Or simply wait until the TTL is 0.
+
+To check the remaining TTL:
+
+```bash
+vault lease lookup exoscale/apikey/list-only/RFTc9F1wU5r1AgMC7ukKLLQB
+Key             Value
+---             -----
+expire_time     2022-12-06T07:43:28.251208682Z
+id              exoscale/apikey/list-only/RFTc9F1wU5r1AgMC7ukKLLQB
+issue_time      2022-12-06T07:40:28.251208288Z
+last_renewal    <nil>
+renewable       true
+ttl             2m33s
+```
 
 ## Limitations of the Demo Setup
 
